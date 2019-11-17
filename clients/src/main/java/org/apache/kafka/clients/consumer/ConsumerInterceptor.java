@@ -77,6 +77,33 @@ public interface ConsumerInterceptor<K, V> extends Configurable, AutoCloseable {
     public void onCommit(Map<TopicPartition, OffsetAndMetadata> offsets);
 
     /**
+     * This is called just before a commit request is sent to the cluster.
+     * <p>
+     * This method is allowed to modify the offsets that will be committed, in which case the new offsets will be
+     * committed. There is no limitation on the number of offsets that can be returned from this method. I.e., the
+     * interceptor can filter the offsets or generate new offsets.
+     * <p>
+     * Any exception thrown by this method will be caught by the caller, logged, but not propagated to the client.
+     * <p>
+     * Since the consumer may run multiple interceptors, a particular interceptor's preCommit() callback will
+     * be called in the order specified by {@link org.apache.kafka.clients.consumer.ConsumerConfig#INTERCEPTOR_CLASSES_CONFIG}.
+     * The first interceptor in the list gets the offsets to commit, the following interceptor will be passed the offsets
+     * returned by the previous interceptor, and so on. Since interceptors are allowed to modify offsets, interceptors
+     * may potentially get offsets already modified by other interceptors. However, building a pipeline of mutable
+     * interceptors that depend on the output of the previous interceptor is discouraged, because of potential
+     * side-effects caused by interceptors potentially failing to modify the offsets and throwing an exception.
+     * If one of the interceptors in the list throws an exception from preCommit(), the exception is caught, logged,
+     * and the next interceptor is called with the offsets returned by the last successful interceptor in the list,
+     * or otherwise the original offsets to commit.
+     *
+     * @param offsets offsets to be committed to the cluster, or offsets returned by the previous interceptor in the list
+     * @return offsets that are either modified by the interceptor or the same offsets passed to this method.
+     */
+    public default Map<TopicPartition, OffsetAndMetadata> preCommit(Map<TopicPartition, OffsetAndMetadata> offsets) {
+        return offsets;
+    }
+
+    /**
      * This is called when interceptor is closed
      */
     public void close();

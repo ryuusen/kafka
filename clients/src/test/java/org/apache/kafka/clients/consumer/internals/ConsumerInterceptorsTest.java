@@ -44,9 +44,10 @@ public class ConsumerInterceptorsTest {
     private final TopicPartition filterTopicPart1 = new TopicPartition("test5", filterPartition1);
     private final TopicPartition filterTopicPart2 = new TopicPartition("test6", filterPartition2);
     private final ConsumerRecord<Integer, Integer> consumerRecord =
-        new ConsumerRecord<>(topic, partition, 0, 0L, TimestampType.CREATE_TIME, 0L, 0, 0, 1, 1);
+            new ConsumerRecord<>(topic, partition, 0, 0L, TimestampType.CREATE_TIME, 0L, 0, 0, 1, 1);
     private int onCommitCount = 0;
     private int onConsumeCount = 0;
+    private int preCommitCount = 0;
 
     /**
      * Test consumer interceptor that filters records in onConsume() intercept
@@ -55,6 +56,7 @@ public class ConsumerInterceptorsTest {
         private int filterPartition;
         private boolean throwExceptionOnConsume = false;
         private boolean throwExceptionOnCommit = false;
+        private boolean throwExceptionPreCommit = false;
 
         FilterConsumerInterceptor(int filterPartition) {
             this.filterPartition = filterPartition;
@@ -87,6 +89,22 @@ public class ConsumerInterceptorsTest {
         }
 
         @Override
+        public Map<TopicPartition, OffsetAndMetadata> preCommit(Map<TopicPartition, OffsetAndMetadata> offsets) {
+            preCommitCount++;
+            if (throwExceptionPreCommit)
+                throw new KafkaException("Injected exception in FilterConsumerInterceptor.preConsume");
+
+            // filter out topic/partitions with partition == FILTER_PARTITION
+            Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
+            for (TopicPartition tp : offsets.keySet()) {
+                if (tp.partition() != filterPartition) {
+                    offsetMap.put(tp, offsets.get(tp));
+                }
+            }
+            return offsetMap;
+        }
+
+        @Override
         public void close() {
         }
 
@@ -99,11 +117,16 @@ public class ConsumerInterceptorsTest {
         public void injectOnCommitError(boolean on) {
             throwExceptionOnCommit = on;
         }
+
+        // if 'on' is true, preCommit will always throw an exception
+        public void injectPreCommitError(boolean on) {
+            throwExceptionPreCommit = on;
+        }
     }
 
     @Test
     public void testOnConsumeChain() {
-        List<ConsumerInterceptor<Integer, Integer>>  interceptorList = new ArrayList<>();
+        List<ConsumerInterceptor<Integer, Integer>> interceptorList = new ArrayList<>();
         // we are testing two different interceptors by configuring the same interceptor differently, which is not
         // how it would be done in KafkaConsumer, but ok for testing interceptor callbacks
         FilterConsumerInterceptor<Integer, Integer> interceptor1 = new FilterConsumerInterceptor<>(filterPartition1);
@@ -118,10 +141,10 @@ public class ConsumerInterceptorsTest {
         list1.add(consumerRecord);
         List<ConsumerRecord<Integer, Integer>> list2 = new ArrayList<>();
         list2.add(new ConsumerRecord<>(filterTopicPart1.topic(), filterTopicPart1.partition(), 0,
-                                       0L, TimestampType.CREATE_TIME, 0L, 0, 0, 1, 1));
+                0L, TimestampType.CREATE_TIME, 0L, 0, 0, 1, 1));
         List<ConsumerRecord<Integer, Integer>> list3 = new ArrayList<>();
         list3.add(new ConsumerRecord<>(filterTopicPart2.topic(), filterTopicPart2.partition(), 0,
-                                       0L, TimestampType.CREATE_TIME, 0L, 0, 0, 1, 1));
+                0L, TimestampType.CREATE_TIME, 0L, 0, 0, 1, 1));
         records.put(tp, list1);
         records.put(filterTopicPart1, list2);
         records.put(filterTopicPart2, list3);
@@ -172,6 +195,47 @@ public class ConsumerInterceptorsTest {
         interceptor1.injectOnCommitError(true);
         interceptors.onCommit(offsets);
         assertEquals(4, onCommitCount);
+
+        interceptors.close();
+    }
+
+    @Test
+    public void testPreCommitChain() {
+        List<ConsumerInterceptor<Integer, Integer>> interceptorList = new ArrayList<>();
+        // we are testing two different interceptors by configuring the same interceptor differently, which is not
+        // how it would be done in KafkaConsumer, but ok for testing interceptor callbacks
+        FilterConsumerInterceptor<Integer, Integer> interceptor1 = new FilterConsumerInterceptor<>(filterPartition1);
+        FilterConsumerInterceptor<Integer, Integer> interceptor2 = new FilterConsumerInterceptor<>(filterPartition2);
+        interceptorList.add(interceptor1);
+        interceptorList.add(interceptor2);
+        ConsumerInterceptors<Integer, Integer> interceptors = new ConsumerInterceptors<>(interceptorList);
+
+        // Verify that preCommit modifies offsets
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+        offsets.put(new TopicPartition(topic, partition), new OffsetAndMetadata(0));
+        offsets.put(filterTopicPart1, new OffsetAndMetadata(1));
+        offsets.put(filterTopicPart2, new OffsetAndMetadata(2));
+        Map<TopicPartition, OffsetAndMetadata> interceptedOffsets = interceptors.preCommit(offsets);
+        assertEquals(1, interceptedOffsets.size());
+        assertTrue(interceptedOffsets.containsKey(tp));
+        assertFalse(interceptedOffsets.containsKey(filterTopicPart1));
+        assertFalse(interceptedOffsets.containsKey(filterTopicPart2));
+        assertEquals(2, preCommitCount);
+
+        // verify that even if one of the intermediate interceptors throws an exception, all interceptors' preCommit are called
+        interceptor1.injectPreCommitError(true);
+        Map<TopicPartition, OffsetAndMetadata> partInterceptedOffsets = interceptors.preCommit(offsets);
+        assertEquals(2, partInterceptedOffsets.size());
+        assertTrue(partInterceptedOffsets.containsKey(filterTopicPart1));
+        assertFalse(partInterceptedOffsets.containsKey(filterTopicPart2));
+        assertEquals(4, preCommitCount);
+
+        // if all interceptors throw an exception, records should be unmodified
+        interceptor2.injectPreCommitError(true);
+        Map<TopicPartition, OffsetAndMetadata> noneInterceptedOffsets = interceptors.preCommit(offsets);
+        assertEquals(noneInterceptedOffsets, offsets);
+        assertEquals(3, noneInterceptedOffsets.size());
+        assertEquals(6, preCommitCount);
 
         interceptors.close();
     }

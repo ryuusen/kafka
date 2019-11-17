@@ -1020,7 +1020,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @return A request future whose value indicates whether the commit was successful or not
      */
     private RequestFuture<Void> sendOffsetCommitRequest(final Map<TopicPartition, OffsetAndMetadata> offsets) {
-        if (offsets.isEmpty())
+        Map<TopicPartition, OffsetAndMetadata> interceptedOffsets = interceptors.preCommit(offsets);
+
+        if (interceptedOffsets.isEmpty())
             return RequestFuture.voidSuccess();
 
         Node coordinator = checkAndGetCoordinator();
@@ -1029,7 +1031,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         // create the offset commit request
         Map<String, OffsetCommitRequestData.OffsetCommitRequestTopic> requestTopicDataMap = new HashMap<>();
-        for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
+        for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : interceptedOffsets.entrySet()) {
             TopicPartition topicPartition = entry.getKey();
             OffsetAndMetadata offsetAndMetadata = entry.getValue();
             if (offsetAndMetadata.offset() < 0) {
@@ -1075,7 +1077,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         log.trace("Sending OffsetCommit request with {} to coordinator {}", offsets, coordinator);
 
         return client.send(coordinator, builder)
-                .compose(new OffsetCommitResponseHandler(offsets));
+                .compose(new OffsetCommitResponseHandler(interceptedOffsets));
     }
 
     private class OffsetCommitResponseHandler extends CoordinatorResponseHandler<OffsetCommitResponse, Void> {

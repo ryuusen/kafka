@@ -88,6 +88,33 @@ public class ConsumerInterceptors<K, V> implements Closeable {
     }
 
     /**
+     * This is called when offsets are about to be committed to the cluster.
+     * <p>
+     * This method calls {@link ConsumerInterceptor#preCommit(offsets)} for each interceptor.
+     * Offsets returned from each interceptor get passed to preCommit() of the next interceptor
+     * in the chain of interceptors.
+     * <p>
+     * This method does not throw exceptions. If any of the interceptors in the chain throws an exception,
+     * it gets caught and logged, and the next interceptor in the chain is called with 'offsets' returned by the
+     * previous successful interceptor preConsume call.
+     *
+     * @param offsets offsets to be committed to the cluster.
+     * @return offsets that are either modified by interceptors or same as records passed to this method.
+     */
+    public Map<TopicPartition, OffsetAndMetadata> preCommit(Map<TopicPartition, OffsetAndMetadata> offsets) {
+        Map<TopicPartition, OffsetAndMetadata> interceptedOffsets = offsets;
+        for (ConsumerInterceptor<K, V> interceptor : this.interceptors) {
+            try {
+                interceptedOffsets = interceptor.preCommit(interceptedOffsets);
+            } catch (Exception e) {
+                // do not propagate interceptor exceptions, just log and continue calling other interceptors
+                log.warn("Error executing interceptor preCommit callback", e);
+            }
+        }
+        return interceptedOffsets;
+    }
+
+    /**
      * Closes every interceptor in a container.
      */
     @Override
