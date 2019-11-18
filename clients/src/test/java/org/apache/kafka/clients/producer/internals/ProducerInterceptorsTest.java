@@ -63,7 +63,10 @@ public class ProducerInterceptorsTest {
         }
 
         @Override
-        public void onAcknowledgement(RecordMetadata metadata, Exception exception) {
+        public void onAcknowledgement(RecordMetadata metadata, Exception exception){}
+
+        @Override
+        public void onAcknowledgement(ProducerRecord<Integer, String> producerRecord, RecordMetadata metadata, Exception exception) {
             onAckCount++;
             if (exception != null) {
                 onErrorAckCount++;
@@ -145,16 +148,16 @@ public class ProducerInterceptorsTest {
 
         // verify onAck is called on all interceptors
         RecordMetadata meta = new RecordMetadata(tp, 0, 0, 0, Long.valueOf(0L), 0, 0);
-        interceptors.onAcknowledgement(meta, null);
+        interceptors.onAcknowledgement(producerRecord, meta, null);
         assertEquals(2, onAckCount);
 
         // verify that onAcknowledgement exceptions do not propagate
         interceptor1.injectOnAcknowledgementError(true);
-        interceptors.onAcknowledgement(meta, null);
+        interceptors.onAcknowledgement(producerRecord, meta, null);
         assertEquals(4, onAckCount);
 
         interceptor2.injectOnAcknowledgementError(true);
-        interceptors.onAcknowledgement(meta, null);
+        interceptors.onAcknowledgement(producerRecord, meta, null);
         assertEquals(6, onAckCount);
 
         interceptors.close();

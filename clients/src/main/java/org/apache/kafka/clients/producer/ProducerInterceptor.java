@@ -89,6 +89,31 @@ public interface ProducerInterceptor<K, V> extends Configurable {
     public void onAcknowledgement(RecordMetadata metadata, Exception exception);
 
     /**
+     * This method is called when the record sent to the server has been acknowledged, or when sending the record fails before
+     * it gets sent to the server.
+     * <p>
+     * This method is generally called just before the user callback is called, and in additional cases when <code>KafkaProducer.send()</code>
+     * throws an exception.
+     * <p>
+     * Any exception thrown by this method will be ignored by the caller.
+     * <p>
+     * This method will generally execute in the background I/O thread, so the implementation should be reasonably fast.
+     * Otherwise, sending of messages from other threads could be delayed.
+     *
+     * @param metadata The metadata for the record that was sent (i.e. the partition and offset).
+     *                 If an error occurred, metadata will contain only valid topic and maybe
+     *                 partition. If partition is not given in ProducerRecord and an error occurs
+     *                 before partition gets assigned, then partition will be set to RecordMetadata.NO_PARTITION.
+     *                 The metadata may be null if the client passed null record to
+     *                 {@link org.apache.kafka.clients.producer.KafkaProducer#send(ProducerRecord)}.
+     * @param exception The exception thrown during processing of this record. Null if no error occurred.
+     * @param producerRecord the original record that was sent to the server.
+     */
+    public default void onAcknowledgement(ProducerRecord<K, V> producerRecord, RecordMetadata metadata, Exception exception) {
+        this.onAcknowledgement(metadata, exception);
+    }
+
+    /**
      * This is called when interceptor is closed
      */
     public void close();

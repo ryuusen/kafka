@@ -258,8 +258,8 @@ public class MockProducer<K, V> implements Producer<K, V> {
         FutureRecordMetadata future = new FutureRecordMetadata(result, 0, RecordBatch.NO_TIMESTAMP,
                 0L, 0, 0, Time.SYSTEM);
         long offset = nextOffset(topicPartition);
-        Completion completion = new Completion(offset, new RecordMetadata(topicPartition, 0, offset,
-                RecordBatch.NO_TIMESTAMP, Long.valueOf(0L), 0, 0), result, callback);
+        Completion<K, V> completion = new Completion<K, V>(offset, new RecordMetadata(topicPartition, 0, offset,
+                RecordBatch.NO_TIMESTAMP, Long.valueOf(0L), 0, 0), result, callback, record);
 
         if (!this.transactionInFlight)
             this.sent.add(record);
@@ -443,29 +443,32 @@ public class MockProducer<K, V> implements Producer<K, V> {
         return this.partitioner.partition(topic, record.key(), keyBytes, record.value(), valueBytes, cluster);
     }
 
-    private static class Completion {
+    private static class Completion<K, V> {
         private final long offset;
         private final RecordMetadata metadata;
         private final ProduceRequestResult result;
         private final Callback callback;
+        private final ProducerRecord<K, V> producerRecord;
 
         public Completion(long offset,
                           RecordMetadata metadata,
                           ProduceRequestResult result,
-                          Callback callback) {
+                          Callback callback,
+                          ProducerRecord<K, V> producerRecord) {
             this.metadata = metadata;
             this.offset = offset;
             this.result = result;
             this.callback = callback;
+            this.producerRecord = producerRecord;
         }
 
         public void complete(RuntimeException e) {
             result.set(e == null ? offset : -1L, RecordBatch.NO_TIMESTAMP, e);
             if (callback != null) {
                 if (e == null)
-                    callback.onCompletion(metadata, null);
+                    callback.onCompletion(producerRecord, metadata, null);
                 else
-                    callback.onCompletion(null, e);
+                    callback.onCompletion(producerRecord, null, e);
             }
             result.done();
         }

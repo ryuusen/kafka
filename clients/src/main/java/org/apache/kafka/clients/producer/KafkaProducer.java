@@ -920,7 +920,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 log.trace("Attempting to append record {} with callback {} to topic {} partition {}", record, callback, record.topic(), partition);
             }
             // producer callback will make sure to call both 'callback' and interceptor callback
-            Callback interceptCallback = new InterceptorCallback<>(callback, this.interceptors, tp);
+            Callback interceptCallback = new InterceptorCallback<>(callback, this.interceptors, tp, record);
 
             if (transactionManager != null && transactionManager.isTransactional()) {
                 transactionManager.failIfNotReadyForSend();
@@ -937,7 +937,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                     log.trace("Retrying append due to new batch creation for topic {} partition {}. The old partition was {}", record.topic(), partition, prevPartition);
                 }
                 // producer callback will make sure to call both 'callback' and interceptor callback
-                interceptCallback = new InterceptorCallback<>(callback, this.interceptors, tp);
+                interceptCallback = new InterceptorCallback<>(callback, this.interceptors, tp, record);
 
                 result = accumulator.append(tp, timestamp, serializedKey,
                     serializedValue, headers, interceptCallback, remainingWaitMs, false);
@@ -1334,18 +1334,21 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         private final Callback userCallback;
         private final ProducerInterceptors<K, V> interceptors;
         private final TopicPartition tp;
+        private final ProducerRecord<K, V> producerRecord;
 
-        private InterceptorCallback(Callback userCallback, ProducerInterceptors<K, V> interceptors, TopicPartition tp) {
+        private InterceptorCallback(Callback userCallback, ProducerInterceptors<K, V> interceptors, TopicPartition tp, ProducerRecord<K, V> producerRecord) {
             this.userCallback = userCallback;
             this.interceptors = interceptors;
             this.tp = tp;
+            this.producerRecord = producerRecord;
+
         }
 
         public void onCompletion(RecordMetadata metadata, Exception exception) {
             metadata = metadata != null ? metadata : new RecordMetadata(tp, -1, -1, RecordBatch.NO_TIMESTAMP, Long.valueOf(-1L), -1, -1);
-            this.interceptors.onAcknowledgement(metadata, exception);
+            this.interceptors.onAcknowledgement(producerRecord, metadata, exception);
             if (this.userCallback != null)
-                this.userCallback.onCompletion(metadata, exception);
+                this.userCallback.onCompletion(producerRecord, metadata, exception);
         }
     }
 }
