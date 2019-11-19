@@ -2200,6 +2200,23 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     }
 
     /**
+     * Get the offsets that will be committed by the versions of {@link #commitAsync()} and {@link #commitSync()} that
+     * do take an explicit map of TopicPartitions and offsets. Functionally the same as collecting the highest offsets
+     * of each partition returned in the last call to {@link #poll(Duration) #poll()}.
+     *
+     * @return The offsets that would be committed by {@link #commitAsync()} or {@link #commitSync()}
+     */
+    @Override
+    public Map<TopicPartition, OffsetAndMetadata> offsetsToBeCommitted() {
+        acquireAndEnsureOpen();
+        try {
+            return subscriptions.allConsumed();
+        } finally {
+            release();
+        }
+    }
+
+    /**
      * Close the consumer, waiting for up to the default timeout of 30 seconds for any needed cleanup.
      * If auto-commit is enabled, this will commit the current offsets if possible within the default
      * timeout. See {@link #close(Duration)} for details. Note that {@link #wakeup()}

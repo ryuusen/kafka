@@ -244,6 +244,11 @@ public interface Consumer<K, V> extends Closeable {
     Map<TopicPartition, Long> endOffsets(Collection<TopicPartition> partitions, Duration timeout);
 
     /**
+     * @see KafkaConsumer#offsetsToBeCommitted()
+     */
+    Map<TopicPartition, OffsetAndMetadata> offsetsToBeCommitted();
+
+    /**
      * @see KafkaConsumer#close()
      */
     void close();
